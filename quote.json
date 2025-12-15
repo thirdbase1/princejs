@@ -1,0 +1,5 @@
+{
+  "depositCoin": "btc",
+  "settleCoin": "eth",
+  "settleAmount": "0.1"
+}

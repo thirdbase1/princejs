@@ -14,7 +14,9 @@ const app = new Elysia()
     .use(swagger())
     .use(rateLimit({
         duration: 60000, // 1 minute
-        max: 30, // 30 requests per minute
+        max: 100, // A more sensible limit
+        context: false, // Ensure it doesn't interfere with request context
+        generator: (req) => req.headers.get('x-forwarded-for') ?? 'unknown' // Use header for client ID
     }))
     .onError(({ code, error, set }) => {
         console.error(`Error ${code}: ${error.message}`);
@@ -145,15 +147,15 @@ const startServer = async () => {
     try {
         await initDb();
 
-        // Re-enable webhook registration
-        const webhookUrl = `${process.env.SERVER_PUBLIC_URL}/api/v1/sideshift-webhook`;
-        if (process.env.SERVER_PUBLIC_URL) {
-            console.log(`Attempting to register webhook: ${webhookUrl}`);
-            await sideshift.setupWebhook(webhookUrl);
-            console.log("✅ Webhook registered with SideShift successfully.");
-        } else {
-            console.warn("⚠️ SERVER_PUBLIC_URL is not set. Skipping webhook registration.");
-        }
+        // Webhook registration is disabled for local benchmarking as it requires a public URL.
+        // const webhookUrl = `${process.env.SERVER_PUBLIC_URL}/api/v1/sideshift-webhook`;
+        // if (process.env.SERVER_PUBLIC_URL && process.env.SERVER_PUBLIC_URL !== "http://localhost:3000") {
+        //     console.log(`Attempting to register webhook: ${webhookUrl}`);
+        //     await sideshift.setupWebhook(webhookUrl);
+        //     console.log("✅ Webhook registered with SideShift successfully.");
+        // } else {
+        //     console.warn("⚠️ SERVER_PUBLIC_URL is not set or is localhost. Skipping webhook registration.");
+        // }
 
         app.listen(3000);
         console.log(`🦊 ShiftHook server running at http://${app.server?.hostname}:${app.server?.port}`);
