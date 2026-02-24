@@ -14,6 +14,11 @@ export const downloadVideo = async (url: string, height: number, outputPath: str
       mergeOutputFormat: 'mp4',
       noWarnings: true,
       preferFreeFormats: true,
+      // yt-dlp-exec options for addHeader should be a string array
+      addHeader: [
+        'Referer:https://www.dailymotion.com/',
+        'User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      ] as any // Cast to any because the type definition might expect string but array is valid for multiple headers
     };
 
     if (ffmpegPath) {
@@ -23,11 +28,6 @@ export const downloadVideo = async (url: string, height: number, outputPath: str
     await ytDlp(url, options);
 
     // Verify file exists
-    // yt-dlp might append extension if we didn't specify correct one or if merge happened.
-    // If outputPath ends in .mp4, it should be fine.
-    // But sometimes it appends .mp4 to outputPath if it didn't have extension.
-    // We assume outputPath has .mp4 extension.
-
     if (!fs.existsSync(outputPath)) {
         // Check if it created something else?
         // Maybe it created .mkv?
@@ -35,8 +35,6 @@ export const downloadVideo = async (url: string, height: number, outputPath: str
         if (fs.existsSync(mkvPath)) {
             return mkvPath;
         }
-        // Or check directory for similar file?
-        // throw new Error('Download failed: Output file not found.');
     }
 
     return outputPath;
@@ -52,6 +50,7 @@ export interface VideoFormat {
   ext: string;
   filesize: number;
   filesize_approx: number;
+  tbr?: number;
   vcodec: string;
   acodec: string;
   resolution: string;
@@ -74,7 +73,10 @@ export const getVideoInfo = async (url: string): Promise<VideoInfo> => {
       dumpSingleJson: true,
       noWarnings: true,
       preferFreeFormats: true,
-      youtubeSkipDashManifest: true,
+      addHeader: [
+        'Referer:https://www.dailymotion.com/',
+        'User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      ] as any
     });
 
     const info = output as any;
@@ -91,11 +93,21 @@ export const getVideoInfo = async (url: string): Promise<VideoInfo> => {
     const uniqueQualities = new Map<number, any>();
 
     for (const f of videoFormats) {
+        // Estimate size if missing
+        if ((!f.filesize || f.filesize === 0) && (!f.filesize_approx || f.filesize_approx === 0)) {
+            if (f.tbr && info.duration) {
+                // tbr is in kbits/s. Size in bytes = (tbr * 1000 / 8) * duration
+                // Usually tbr is total bit rate.
+                // Let's approximate.
+                f.filesize_approx = Math.floor((f.tbr * 1024 / 8) * info.duration);
+            }
+        }
+
         if (!uniqueQualities.has(f.height)) {
              uniqueQualities.set(f.height, f);
         } else {
              const existing = uniqueQualities.get(f.height)!;
-             // Heuristic: Prefer format with known filesize or larger approx size (likely better bitrate/quality)
+             // Heuristic: Prefer format with known filesize or larger approx size
              const sizeNew = f.filesize || f.filesize_approx || 0;
              const sizeOld = existing.filesize || existing.filesize_approx || 0;
              if (sizeNew > sizeOld) {
@@ -112,6 +124,7 @@ export const getVideoInfo = async (url: string): Promise<VideoInfo> => {
             ext: f.ext,
             filesize: f.filesize || 0,
             filesize_approx: f.filesize_approx || 0,
+            tbr: f.tbr,
             vcodec: f.vcodec,
             acodec: f.acodec,
             resolution: f.resolution || `${f.width}x${f.height}`,

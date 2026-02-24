@@ -15,6 +15,10 @@ if (!config.botToken) {
 
 export const bot = new Bot(config.botToken);
 
+bot.catch((err) => {
+  console.error('Global Error Handler:', err);
+});
+
 bot.command('start', (ctx) => {
   ctx.reply('👋 Welcome to the Video Splitter Bot!\n\nSend me a public video URL (YouTube, TikTok, Instagram, etc.) and I will fetch it for you. If it\'s larger than 50MB, I will split it automatically! 🚀');
 });
@@ -24,10 +28,14 @@ bot.on('message:text', async (ctx) => {
 
   if (!url.match(/^https?:\/\//)) return;
 
+  console.log(`Received URL: ${url} from ${ctx.from?.username || ctx.from?.id}`);
+
   try {
     const statusMsg = await ctx.reply('🔍 *Fetching video info...*', { parse_mode: 'Markdown' });
+    console.log('Sent status message');
 
     const info = await getVideoInfo(url);
+    console.log(`Video info fetched: ${info.title}`);
     const requestId = crypto.randomUUID().split('-')[0];
     store.set(requestId, { url, title: info.title, duration: info.duration, thumb: info.thumbnail });
 
@@ -78,11 +86,11 @@ bot.on('callback_query:data', async (ctx) => {
 
     const context = store.get(requestId);
     if (!context) {
-        await ctx.answerCallbackQuery('Session expired. Please send the link again.');
+        await ctx.answerCallbackQuery('Session expired. Please send the link again.').catch(() => {});
         return;
     }
 
-    await ctx.answerCallbackQuery('Queued for download...');
+    await ctx.answerCallbackQuery('Queued for download...').catch(() => {});
     const statusMsg = await ctx.reply(`⏳ *Queued...* (Position: ${queue.getQueueLength() + 1})`, { parse_mode: 'Markdown' });
 
     queue.enqueue(async () => {
